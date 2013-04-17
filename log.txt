@@ -1,3 +1,0 @@
-DEBUG:root:this is a debug 
-DEBUG:root:this is a debug 
-DEBUG:root:this is a debug Ricky
