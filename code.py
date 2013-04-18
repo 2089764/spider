@@ -25,7 +25,7 @@ parse.add_argument('-db', action='store', dest='db', help='数据库文件', def
 parse.add_argument('-testself', action='store', dest='testself', help='程序自测', default=True)
 
 result = parse.parse_args()
-q = Queue.Queue(1000)
+q = Queue.Queue(10000)
 q.put(result.start)
 
 class Spider(threading.Thread):
@@ -55,11 +55,12 @@ class Spider(threading.Thread):
         print u'进程'+threading.currentThread().getName()+u'采集完毕'
 
     def get_content_by_url(self, url):
-        conent = requests.get(url)
-        if conent.status_code == 200:
-            return conent.text
+        content = requests.get(url)
+        if content.status_code == 200:
+            self._encoding = content.encoding
+            return content.text
         else:
-            print url+u'返回代码:'+str(conent.status_code)
+            print url+u'返回代码:'+str(content.status_code)
             return False
 
     def handleHtml(self, url, html):
@@ -67,18 +68,30 @@ class Spider(threading.Thread):
         分析HTML文件中的A标签
         '''
         soup = bs.BeautifulSoup(html)
-        keyword = soup.findAll(attr={'name': 'keyword'})
-        if keyword and keyword[0]:
+        keyword = soup.findAll(attrs={'name': 'keyword'})
+
+        if not keyword:
+            keyword = soup.findAll(attrs={'name': 'keywords'})
+
+        if not keyword:
+            keyword = soup.findAll(attrs={'name': 'Keyword'})
+
+        if keyword and keyword[0] and keyword[0]['content']:
             self._keyword = keyword[0]['content']
         else:
             self._keyword = ''
 
         a = soup.findAll('a')
+        tmp = list()
         for x in a:
             try:
-                self.handleAtags(x['href'])
-            except KeyError:
+                if x['href']:
+                    tmp.append(x['href'])
+            except Exception as e:
                 pass
+
+        for x in tmp:
+            self.handleAtags(x)
 
     def handleAtags(self, url):
         parse = urlparse.urlparse(url)
@@ -114,7 +127,7 @@ class Spider(threading.Thread):
         '''
         保存已爬过的URL
         '''
-        sql  = 'INSERT INTO `url` (`url`, `keyword`) VALUES("{0}", "{1}")'.format(url, keyword)
+        sql  = 'INSERT INTO `url` (`url`, `keyword`) VALUES("{0}", "{1}")'.format(url, keyword.encode(self._encoding))
         conn = sqlite3.connect('/www/spider/spider.db')
         cu   = conn.cursor()
         cu.execute(sql)
@@ -123,7 +136,8 @@ class Spider(threading.Thread):
         return True
 
     def findUrl(self, url):
-        sql  = 'SELECT * FROM `url` WHERE `url`="{0}"'.format(url)
+        url_d = url+'/'
+        sql  = 'SELECT * FROM `url` WHERE `url`="{0}" OR `url`="{1}"'.format(url.encode(self._encoding), url_d.encode(self._encoding))
         conn = sqlite3.connect('/www/spider/spider.db')
         cu   = conn.cursor()
         cu.execute(sql)
